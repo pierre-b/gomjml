@@ -375,3 +375,63 @@ func TestStyleOrdering(t *testing.T) {
 		t.Errorf("Expected '%s', got '%s'", expected, result)
 	}
 }
+
+// TestEscapeAttributeValue verifies that attribute values are escaped on output
+// for the characters that corrupt a double-quoted attribute (" < >), while
+// ampersands - including values that already carry valid &...; entities, such as
+// the pre-escaped mj-section background URL - are left untouched so they are not
+// double-encoded.
+func TestEscapeAttributeValue(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "plain value is unchanged", value: "hello world", want: "hello world"},
+		{name: "double quote is encoded", value: `27" monitor`, want: `27&quot; monitor`},
+		{name: "angle brackets are encoded", value: `tag <b> here`, want: `tag &lt;b&gt; here`},
+		{
+			name:  "bare ampersand is left as-is",
+			value: `a=1&b=2`,
+			want:  `a=1&b=2`,
+		},
+		{
+			name:  "existing entity is not double-escaped",
+			value: `https://x.test/i.png?w=500&amp;auto=format`,
+			want:  `https://x.test/i.png?w=500&amp;auto=format`,
+		},
+		{
+			name:  "mixed quote angle and ampersand",
+			value: `he said "a<b" & "c>d"`,
+			want:  `he said &quot;a&lt;b&quot; & &quot;c&gt;d&quot;`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := escapeAttributeValue(tt.value); got != tt.want {
+				t.Errorf("escapeAttributeValue(%q) = %q, want %q", tt.value, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestRenderSelfClosingEscapesAttributeValue verifies the escaping is wired into
+// the rendering path, so an alt text containing a double quote does not truncate
+// the attribute.
+func TestRenderSelfClosingEscapesAttributeValue(t *testing.T) {
+	var buf strings.Builder
+	err := NewHTMLTag("img").
+		AddAttribute("src", "image.jpg").
+		AddAttribute("alt", `27" monitor`).
+		RenderSelfClosing(&buf)
+	if err != nil {
+		t.Fatalf("RenderSelfClosing failed: %v", err)
+	}
+
+	result := buf.String()
+	expected := `<img src="image.jpg" alt="27&quot; monitor" />`
+	if result != expected {
+		t.Errorf("Expected '%s', got '%s'", expected, result)
+	}
+}
