@@ -1,6 +1,7 @@
 package html
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -433,5 +434,32 @@ func TestRenderSelfClosingEscapesAttributeValue(t *testing.T) {
 	expected := `<img src="image.jpg" alt="27&quot; monitor" />`
 	if result != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, result)
+	}
+}
+
+// failingStringWriter fails the write of one specific string, so a test can
+// drive the error return that follows that write.
+type failingStringWriter struct {
+	strings.Builder
+	failOn string
+}
+
+var errWriteFailed = errors.New("write failed")
+
+func (w *failingStringWriter) WriteString(s string) (int, error) {
+	if s == w.failOn {
+		return 0, errWriteFailed
+	}
+	return w.Builder.WriteString(s)
+}
+
+func TestRenderOpenReturnsAttributeValueWriteError(t *testing.T) {
+	tag := NewHTMLTag("img").AddAttribute("alt", `27" monitor`)
+
+	// The writer only fails on the escaped form of the value, so getting the error
+	// back also shows that the value reaches the writer escaped.
+	err := tag.RenderOpen(&failingStringWriter{failOn: "27&quot; monitor"})
+	if !errors.Is(err, errWriteFailed) {
+		t.Fatalf("RenderOpen() error = %v, want %v", err, errWriteFailed)
 	}
 }
